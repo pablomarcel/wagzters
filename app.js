@@ -1,19 +1,18 @@
 const express = require('express');
 const neo4j = require('neo4j-driver');
+const { v4: uuidv4 } = require('uuid');
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 4000;
 
 app.use(express.json());
 
 // Replace with your Neo4j Aura connection credentials
-
 const driver = neo4j.driver(
-    'neo4j://your-neo4j-instance-uri',
-    neo4j.auth.basic('your-username', 'your-password')
+    'neo4j+s://dd3f90d1.databases.neo4j.io',
+    neo4j.auth.basic('neo4j', 'OWQoga9pbF-YcT1vGV27hxKGqJNqnhAtlPm2hst_uqQ')
 );
 
 // Create pet owner
-
 app.post('/api/petowners', async (req, res) => {
     const { name, email } = req.body;
 
@@ -21,10 +20,10 @@ app.post('/api/petowners', async (req, res) => {
     try {
         const result = await session.writeTransaction(async (tx) => {
             const query = `
-        CREATE (owner:PetOwner {name: $name, email: $email})
+        CREATE (owner:PetOwner {id: $id, name: $name, email: $email})
         RETURN owner
       `;
-            const params = { name, email };
+            const params = { id: uuidv4(), name, email };
             const response = await tx.run(query, params);
             return response.records[0].get('owner').properties;
         });
@@ -38,7 +37,6 @@ app.post('/api/petowners', async (req, res) => {
 });
 
 // Add pet for pet owner
-
 app.post('/api/petowners/:ownerId/pets', async (req, res) => {
     const ownerId = req.params.ownerId;
     const { name, breed, age } = req.body;
@@ -47,23 +45,40 @@ app.post('/api/petowners/:ownerId/pets', async (req, res) => {
     try {
         const result = await session.writeTransaction(async (tx) => {
             const query = `
-        MATCH (owner:PetOwner) WHERE id(owner) = toInteger($ownerId)
-        CREATE (pet:Pet {name: $name, breed: $breed, age: $age})-[:OWNED_BY]->(owner)
+        MATCH (owner:PetOwner) WHERE owner.id = $ownerId
+        CREATE (pet:Pet {id: $id, name: $name, breed: $breed, age: $age})-[:OWNED_BY]->(owner)
         RETURN pet
       `;
-            const params = { ownerId, name, breed, age };
+            const params = { id: uuidv4(), ownerId, name, breed, age };
             const response = await tx.run(query, params);
             return response.records[0].get('pet').properties;
         });
 
         res.status(201).json(result);
     } catch (error) {
-        res.status(500).json({ error: 'An error occurred while adding the pet.' });
+        console.error(error); // Log the error to the console for more details
+        res.status(500).json({ error: 'An error occurred while adding the pet.', details: error.message });
     } finally {
         await session.close();
     }
 });
 
+
+app.get('/api/petowners', async (req, res) => {
+    const session = driver.session();
+    try {
+        const result = await session.run('MATCH (owner:PetOwner) RETURN owner');
+        const owners = result.records.map(record => record.get('owner').properties);
+        res.json(owners);
+    } catch (error) {
+        console.error('Error fetching pet owners', error);
+        res.status(500).json({ error: 'Internal server error' });
+    } finally {
+        await session.close();
+    }
+});
+
+
 app.listen(port, () => {
-    console.log(`Puppy Social Network backend listening at http://localhost:${port}`);
+    console.log(`Wagzters backend listening at http://localhost:${port}`);
 });
